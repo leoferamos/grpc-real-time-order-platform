@@ -1,0 +1,74 @@
+services:
+  # Certificate Generator
+  cert-generator:
+    image: alpine:latest
+    container_name: cert-generator
+    volumes:
+      - certs:/certs
+    command: >
+      sh -c "apk add --no-cache openssl &&
+             cd /certs &&
+             openssl genrsa -out ca.key 4096 &&
+             openssl req -new -x509 -key ca.key -out ca.crt -days 3650 -subj '/CN=gRPC CA' &&
+             openssl genrsa -out server.key 4096 &&
+             openssl req -new -key server.key -out server.csr -subj '/CN=order-service' &&
+             openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650 &&
+             openssl genrsa -out client.key 4096 &&
+             openssl req -new -key client.key -out client.csr -subj '/CN=gateway-api' &&
+             openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 3650 &&
+             echo 'Certificates generated successfully' &&
+             ls -la /certs"
+    networks:
+      - grpc-network
+
+  # API Gateway
+  gateway-api:
+    build:
+      context: .
+      dockerfile: ./gateway-api/Dockerfile
+    container_name: gateway-api
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - GRPC_CLIENT_ORDER_SERVICE_ADDRESS=static://order-service:9090
+      - CERTS_DIR=/certs
+    volumes:
+      - certs:/certs:ro
+    networks:
+      - grpc-network
+    depends_on:
+      cert-generator:
+        condition: service_completed_successfully
+      order-service:
+        condition: service_started
+    restart: unless-stopped
+
+  # Order Service 
+  order-service:
+    build:
+      context: .
+      dockerfile: ./services/order-service-java/Dockerfile
+    container_name: order-service
+    ports:
+      - "9090:9090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - CERTS_DIR=/certs
+    volumes:
+      - certs:/certs:ro
+    networks:
+      - grpc-network
+    depends_on:
+      cert-generator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  certs:
+    driver: local
+
+networks:
+  grpc-network:
+    driver: bridge
+    name: grpc-real-time-network
