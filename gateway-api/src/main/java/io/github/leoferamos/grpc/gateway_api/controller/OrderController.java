@@ -38,11 +38,12 @@ public class OrderController {
     @GetMapping("/{orderId}")
     public ResponseEntity<String> getOrderStatus(@PathVariable String orderId) {
         log.info("Getting status for order: {}", orderId);
+        // TODO: Implement order status retrieval via gRPC
         return ResponseEntity.ok("Order status retrieval not yet implemented");
     }
 
     @GetMapping("/health")
     public ResponseEntity<String> health() {
-        return ResponseEntity.ok("Gateway API is running! 🚀");
+        return ResponseEntity.ok("Gateway API is running!");
     }
 }
