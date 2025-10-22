@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.github.leoferamos.grpc.payment";
+option java_outer_classname = "PaymentProto";
+
+package payment;
+
+message PaymentRequest {
+  string order_id = 1;
+  string user_id = 2;
+  double amount = 3;
+  string payment_method = 4; // CREDIT_CARD, PIX, DEBIT_CARD
+}
+
+message PaymentResponse {
+  string payment_id = 1;
+  string status = 2; // APPROVED, REJECTED, PENDING
+  string message = 3;
+}
+
+service PaymentService {
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+}
