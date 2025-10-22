@@ -21,6 +21,7 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - GRPC_CLIENT_ORDER_SERVICE_ADDRESS=static://order-service:9090
+      - GRPC_CLIENT_PAYMENT_SERVICE_ADDRESS=static://payment-service:9091
       - CERTS_DIR=/certs
     volumes:
       - certs:/certs:ro
@@ -30,6 +31,8 @@ services:
       cert-generator:
         condition: service_completed_successfully
       order-service:
+        condition: service_started
+      payment-service:
         condition: service_started
     restart: unless-stopped
 
@@ -41,6 +44,26 @@ services:
     container_name: order-service
     ports:
       - "9090:9090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - CERTS_DIR=/certs
+    volumes:
+      - certs:/certs:ro
+    networks:
+      - grpc-network
+    depends_on:
+      cert-generator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Payment Service
+  payment-service:
+    build:
+      context: .
+      dockerfile: ./services/payment-service-java/Dockerfile
+    container_name: payment-service
+    ports:
+      - "9091:9091"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - CERTS_DIR=/certs
