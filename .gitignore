@@ -1,0 +1,94 @@
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.log
+*.iml
+*.iws
+*.ipr
+.idea/
+out/
+target/
+.classpath
+.project
+.settings/
+bin/
+
+# Maven
+.mvn/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# Gradle
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+vendor/
+
+# Dependency directories
+node_modules/
+
+# IDEs
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# TLS Certificates
+*.key
+*.crt
+*.csr
+*.pem
+*.p12
+*.pfx
+*.jks
+ca.srl
+infra/certs/*.key
+infra/certs/*.crt
+infra/certs/*.csr
+certs/
