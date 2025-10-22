@@ -27,37 +27,44 @@ public class OrderGatewayService {
 
     @PostConstruct
     public void init() {
-        String target;
-        if (orderServiceAddress == null || orderServiceAddress.isBlank()) {
-            throw new IllegalArgumentException("gRPC order service address is not set.");
-        }
-        if (orderServiceAddress.startsWith("static://")) {
-            target = orderServiceAddress.substring("static://".length());
-        } else {
-            target = orderServiceAddress;
-        }
-        if (!target.matches("^[^:]+:\\d+$")) {
-            log.warn("OrderService address format may be invalid: {}", target);
-        }
-        log.info("Connecting to OrderService at {} with TLS", target);
+        try {
+            String target;
+            if (orderServiceAddress == null || orderServiceAddress.isBlank()) {
+                throw new IllegalArgumentException("gRPC order service address is not set.");
+            }
+            if (orderServiceAddress.startsWith("static://")) {
+                target = orderServiceAddress.substring("static://".length());
+            } else {
+                target = orderServiceAddress;
+            }
+            if (!target.matches("^[^:]+:\\d+$")) {
+                log.warn("OrderService address format may be invalid: {}", target);
+            }
+            log.info("Connecting to OrderService at {} with TLS", target);
 
-        // TLS cert paths
-        String certsDir = System.getenv("CERTS_DIR") != null ? System.getenv("CERTS_DIR") : "/certs";
-        File trustCertCollection = new File(certsDir, "ca.crt");
-        File clientCertChain = new File(certsDir, "client.crt");
-        File clientPrivateKey = new File(certsDir, "client.key");
+            // TLS cert paths
+            String certsDir = System.getenv("CERTS_DIR") != null ? System.getenv("CERTS_DIR") : "/certs";
+            File trustCertCollection = new File(certsDir, "ca.crt");
+            File clientCertChain = new File(certsDir, "client.crt");
+            File clientPrivateKey = new File(certsDir, "client.key");
 
-        if (!trustCertCollection.exists() || !clientCertChain.exists() || !clientPrivateKey.exists()) {
-            throw new IllegalStateException("TLS certificates not found in " + certsDir);
+            if (!trustCertCollection.exists() || !clientCertChain.exists() || !clientPrivateKey.exists()) {
+                throw new IllegalStateException("TLS certificates not found in " + certsDir);
+            }
+
+            this.orderChannel = NettyChannelBuilder.forTarget(target)
+                .overrideAuthority("order-service")
+                .sslContext(GrpcSslContexts.forClient()
+                    .trustManager(trustCertCollection)
+                    .keyManager(clientCertChain, clientPrivateKey)
+                    .build())
+                .build();
+            this.orderStub = OrderServiceGrpc.newBlockingStub(orderChannel);
+            log.info("gRPC client initialized with mTLS to OrderService");
+        } catch (Exception e) {
+            log.error("Failed to initialize gRPC client: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to initialize gRPC client", e);
         }
-
-        this.orderChannel = NettyChannelBuilder.forTarget(target)
-            .sslContext(GrpcSslContexts.forClient()
-                .trustManager(trustCertCollection)
-                .keyManager(clientCertChain, clientPrivateKey)
-                .build())
-            .build();
-        this.orderStub = OrderServiceGrpc.newBlockingStub(orderChannel);
     }
 
     @PreDestroy
