@@ -5,6 +5,9 @@ import io.github.leoferamos.grpc.gateway_api.dto.CreateOrderResponse;
 import io.github.leoferamos.grpc.order.OrderRequest;
 import io.github.leoferamos.grpc.order.OrderResponse;
 import io.github.leoferamos.grpc.order.OrderServiceGrpc;
+import io.github.leoferamos.grpc.payment.PaymentRequest;
+import io.github.leoferamos.grpc.payment.PaymentResponse;
+import io.github.leoferamos.grpc.payment.PaymentServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
@@ -22,8 +25,14 @@ public class OrderGatewayService {
     @Value("${grpc.client.order-service.address:static://localhost:9090}")
     private String orderServiceAddress;
 
+    @Value("${grpc.client.payment-service.address:static://localhost:9091}")
+    private String paymentServiceAddress;
+
     private ManagedChannel orderChannel;
     private OrderServiceGrpc.OrderServiceBlockingStub orderStub;
+
+    private ManagedChannel paymentChannel;
+    private PaymentServiceGrpc.PaymentServiceBlockingStub paymentStub;
 
     @PostConstruct
     public void init() {
@@ -61,6 +70,29 @@ public class OrderGatewayService {
                 .build();
             this.orderStub = OrderServiceGrpc.newBlockingStub(orderChannel);
             log.info("gRPC client initialized with mTLS to OrderService");
+
+            // Initialize Payment Service client
+            String paymentTarget;
+            if (paymentServiceAddress == null || paymentServiceAddress.isBlank()) {
+                throw new IllegalArgumentException("gRPC payment service address is not set.");
+            }
+            if (paymentServiceAddress.startsWith("static://")) {
+                paymentTarget = paymentServiceAddress.substring("static://".length());
+            } else {
+                paymentTarget = paymentServiceAddress;
+            }
+            log.info("Connecting to PaymentService at {} with TLS", paymentTarget);
+
+            this.paymentChannel = NettyChannelBuilder.forTarget(paymentTarget)
+                .overrideAuthority("payment-service")
+                .sslContext(GrpcSslContexts.forClient()
+                    .trustManager(trustCertCollection)
+                    .keyManager(clientCertChain, clientPrivateKey)
+                    .build())
+                .build();
+            this.paymentStub = PaymentServiceGrpc.newBlockingStub(paymentChannel);
+            log.info("gRPC client initialized with mTLS to PaymentService");
+
         } catch (Exception e) {
             log.error("Failed to initialize gRPC client: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to initialize gRPC client", e);
@@ -74,7 +106,15 @@ public class OrderGatewayService {
                 orderChannel.shutdownNow();
                 log.info("gRPC channel to OrderService shut down.");
             } catch (Exception e) {
-                log.warn("Error shutting down gRPC channel: {}", e.getMessage());
+                log.warn("Error shutting down OrderService gRPC channel: {}", e.getMessage());
+            }
+        }
+        if (paymentChannel != null) {
+            try {
+                paymentChannel.shutdownNow();
+                log.info("gRPC channel to PaymentService shut down.");
+            } catch (Exception e) {
+                log.warn("Error shutting down PaymentService gRPC channel: {}", e.getMessage());
             }
         }
     }
@@ -102,8 +142,28 @@ public class OrderGatewayService {
         }
         String orderId = orderResp.getOrderId();
         log.info("Order created with ID: {} (status={})", orderId, orderResp.getStatus());
-        String paymentStatus = "APPROVED";
 
+        // Call Payment Service
+        PaymentRequest paymentReq = PaymentRequest.newBuilder()
+            .setOrderId(orderId)
+            .setUserId(request.getUserId())
+            .setAmount(request.getAmount() != null ? request.getAmount() : 100.0)
+            .setPaymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "CREDIT_CARD")
+            .build();
+
+        PaymentResponse paymentResp;
+        String paymentStatus;
+        try {
+            paymentResp = paymentStub.processPayment(paymentReq);
+            paymentStatus = paymentResp.getStatus();
+            log.info("Payment processed: paymentId={} status={} message='{}'", 
+                    paymentResp.getPaymentId(), paymentStatus, paymentResp.getMessage());
+        } catch (Exception e) {
+            log.error("Failed to process payment via gRPC: {}", e.getMessage());
+            paymentStatus = "FAILED";
+        }
+
+        // Mock driver assignment (to be replaced with real DriverService later)
         CreateOrderResponse.DriverInfo driverInfo = CreateOrderResponse.DriverInfo.builder()
             .driverId("driver-001")
             .driverName("John Doe")
