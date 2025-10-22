@@ -1,3 +1,4 @@
+#!/bin/bash
 set -e
 CERTS_DIR="/certs"
 CA_KEY="${CERTS_DIR}/ca.key"
