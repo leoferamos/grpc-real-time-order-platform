@@ -1,0 +1,22 @@
+# OpenSSL configuration for gRPC server certificates
+# This configuration includes Subject Alternative Names (SANs) for proper TLS validation
+
+[req]
+default_bits       = 4096
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt             = no
+
+[req_distinguished_name]
+CN = order-service
+
+[v3_req]
+keyUsage = digitalSignature, keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = order-service
+DNS.2 = localhost
+DNS.3 = *.order-service
+IP.1  = 127.0.0.1
