@@ -97,6 +97,25 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Notification Service
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./services/notification-service-go/Dockerfile
+    container_name: notification-service
+    ports:
+      - "9093:9093"
+    environment:
+      - CERTS_DIR=/certs
+    volumes:
+      - certs:/certs:ro
+    networks:
+      - grpc-network
+    depends_on:
+      cert-generator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   certs:
     driver: local
