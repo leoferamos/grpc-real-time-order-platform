@@ -5,6 +5,10 @@ import io.github.leoferamos.grpc.gateway_api.dto.CreateOrderResponse;
 import io.github.leoferamos.grpc.order.OrderRequest;
 import io.github.leoferamos.grpc.order.OrderResponse;
 import io.github.leoferamos.grpc.order.OrderServiceGrpc;
+import io.github.leoferamos.grpc.driver.AssignDriverRequest;
+import io.github.leoferamos.grpc.driver.AssignDriverResponse;
+import io.github.leoferamos.grpc.driver.DriverServiceGrpc;
+import io.github.leoferamos.grpc.driver.Location;
 import io.github.leoferamos.grpc.payment.PaymentRequest;
 import io.github.leoferamos.grpc.payment.PaymentResponse;
 import io.github.leoferamos.grpc.payment.PaymentServiceGrpc;
@@ -28,11 +32,17 @@ public class OrderGatewayService {
     @Value("${grpc.client.payment-service.address:static://localhost:9091}")
     private String paymentServiceAddress;
 
+    @Value("${grpc.client.driver-service.address:static://localhost:9092}")
+    private String driverServiceAddress;
+
     private ManagedChannel orderChannel;
     private OrderServiceGrpc.OrderServiceBlockingStub orderStub;
 
     private ManagedChannel paymentChannel;
     private PaymentServiceGrpc.PaymentServiceBlockingStub paymentStub;
+
+    private ManagedChannel driverChannel;
+    private DriverServiceGrpc.DriverServiceBlockingStub driverStub;
 
     @PostConstruct
     public void init() {
@@ -93,6 +103,29 @@ public class OrderGatewayService {
             this.paymentStub = PaymentServiceGrpc.newBlockingStub(paymentChannel);
             log.info("gRPC client initialized with mTLS to PaymentService");
 
+            // Initialize Driver Service client with mTLS
+            String driverTarget;
+            if (driverServiceAddress == null || driverServiceAddress.isBlank()) {
+                log.warn("gRPC driver service address is not set; driver assignment disabled");
+            } else {
+                if (driverServiceAddress.startsWith("static://")) {
+                    driverTarget = driverServiceAddress.substring("static://".length());
+                } else {
+                    driverTarget = driverServiceAddress;
+                }
+                log.info("Connecting to DriverService at {} with TLS", driverTarget);
+
+                this.driverChannel = NettyChannelBuilder.forTarget(driverTarget)
+                    .overrideAuthority("driver-service")
+                    .sslContext(GrpcSslContexts.forClient()
+                        .trustManager(trustCertCollection)
+                        .keyManager(clientCertChain, clientPrivateKey)
+                        .build())
+                    .build();
+                this.driverStub = DriverServiceGrpc.newBlockingStub(driverChannel);
+                log.info("gRPC client initialized with mTLS to DriverService");
+            }
+
         } catch (Exception e) {
             log.error("Failed to initialize gRPC client: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to initialize gRPC client", e);
@@ -120,11 +153,16 @@ public class OrderGatewayService {
     }
 
     public CreateOrderResponse createOrder(CreateOrderRequest request) {
-        log.info("Processing order for user: {}", request.getUserId());
+        String customerId = request.getCustomerId();
+        log.info("Processing order for customer: {}", customerId);
+
+        java.util.List<String> itemNames = request.getItems() == null ? java.util.List.of()
+            : request.getItems().stream().map(CreateOrderRequest.OrderItem::getName).toList();
+
         OrderRequest orderReq = OrderRequest.newBuilder()
-            .setUserId(request.getUserId())
+            .setUserId(customerId == null ? "" : customerId)
             .setRestaurantId(request.getRestaurantId() == null ? "" : request.getRestaurantId())
-            .addAllItems(request.getItems() == null ? java.util.List.of() : request.getItems())
+            .addAllItems(itemNames)
             .build();
 
         OrderResponse orderResp;
@@ -144,11 +182,16 @@ public class OrderGatewayService {
         log.info("Order created with ID: {} (status={})", orderId, orderResp.getStatus());
 
         // Call Payment Service
+        double totalAmount = request.getItems() == null ? 0.0
+            : request.getItems().stream()
+                .mapToDouble(i -> (i.getPrice() == null ? 0.0 : i.getPrice()) * (i.getQuantity() == null ? 0 : i.getQuantity()))
+                .sum();
+
         PaymentRequest paymentReq = PaymentRequest.newBuilder()
             .setOrderId(orderId)
-            .setUserId(request.getUserId())
-            .setAmount(request.getAmount() != null ? request.getAmount() : 100.0)
-            .setPaymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "CREDIT_CARD")
+            .setUserId(customerId == null ? "" : customerId)
+            .setAmount(totalAmount)
+            .setPaymentMethod("CREDIT_CARD")
             .build();
 
         PaymentResponse paymentResp;
@@ -163,20 +206,50 @@ public class OrderGatewayService {
             paymentStatus = "FAILED";
         }
 
-        // Mock driver assignment (to be replaced with real DriverService later)
-        CreateOrderResponse.DriverInfo driverInfo = CreateOrderResponse.DriverInfo.builder()
-            .driverId("driver-001")
-            .driverName("John Doe")
-            .vehicle("Toyota Prius - XYZ1234")
-            .estimatedTimeMinutes(5)
-            .build();
+        // Driver assignment via DriverService
+        CreateOrderResponse.DriverInfo driverInfo = null;
+        String orderStatus = "CREATED";
+
+        if ("APPROVED".equalsIgnoreCase(paymentStatus) && driverStub != null) {
+            try {
+                double lat = -23.5505;
+                double lon = -46.6333;
+                if (request.getDeliveryAddress() != null) {
+                    if (request.getDeliveryAddress().getLatitude() != null) lat = request.getDeliveryAddress().getLatitude();
+                    if (request.getDeliveryAddress().getLongitude() != null) lon = request.getDeliveryAddress().getLongitude();
+                }
+
+                AssignDriverRequest driverReq = AssignDriverRequest.newBuilder()
+                    .setOrderId(orderId)
+                    .setPickupLocation(Location.newBuilder().setLatitude(lat).setLongitude(lon).build())
+                    .build();
+
+                AssignDriverResponse dResp = driverStub.assignDriver(driverReq);
+                if ("ASSIGNED".equalsIgnoreCase(dResp.getStatus())) {
+                    driverInfo = CreateOrderResponse.DriverInfo.builder()
+                        .driverId(dResp.getDriverId())
+                        .driverName(dResp.getDriverName())
+                        .vehicle(dResp.getVehicle())
+                        .estimatedTimeMinutes(dResp.getEstimatedTimeMinutes())
+                        .build();
+                    orderStatus = "ASSIGNED";
+                } else {
+                    orderStatus = "PENDING_DRIVER";
+                }
+            } catch (Exception e) {
+                log.warn("Driver assignment failed: {}", e.getMessage());
+                orderStatus = "PENDING_DRIVER";
+            }
+        } else if (!"APPROVED".equalsIgnoreCase(paymentStatus)) {
+            orderStatus = "PAYMENT_" + paymentStatus;
+        }
 
         return CreateOrderResponse.builder()
             .orderId(orderId)
-            .status("ASSIGNED")
+            .status(orderStatus)
             .paymentStatus(paymentStatus)
             .driver(driverInfo)
-            .message("Order created and driver assigned successfully!")
+            .message(orderStatus.equals("ASSIGNED") ? "Order created and driver assigned successfully!" : "Order created; driver pending")
             .build();
     }
 }
