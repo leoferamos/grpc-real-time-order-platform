@@ -86,8 +86,15 @@ services:
     container_name: driver-service
     ports:
       - "9092:9092"
+    environment:
+      - CERTS_DIR=/certs
+    volumes:
+      - certs:/certs:ro
     networks:
       - grpc-network
+    depends_on:
+      cert-generator:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
