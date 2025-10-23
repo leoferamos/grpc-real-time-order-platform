@@ -23,4 +23,6 @@ DNS.4 = payment-service
 DNS.5 = *.payment-service
 DNS.6 = driver-service
 DNS.7 = *.driver-service
+DNS.8 = notification-service
+DNS.9 = *.notification-service
 IP.1  = 127.0.0.1
