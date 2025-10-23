@@ -3,7 +3,7 @@ syntax = "proto3";
 option java_multiple_files = true;
 option java_package = "io.github.leoferamos.grpc.driver";
 option java_outer_classname = "DriverProto";
-option go_package = "github.com/leoferamos/grpc-real-time-order-platform/proto/driver";
+option go_package = "github.com/leoferamos/grpc-real-time-order-platform/driver-service/proto";
 
 package driver;
 
