@@ -22,6 +22,7 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - GRPC_CLIENT_ORDER_SERVICE_ADDRESS=static://order-service:9090
       - GRPC_CLIENT_PAYMENT_SERVICE_ADDRESS=static://payment-service:9091
+      - GRPC_CLIENT_DRIVER_SERVICE_ADDRESS=static://driver-service:9092
       - CERTS_DIR=/certs
     volumes:
       - certs:/certs:ro
@@ -33,6 +34,8 @@ services:
       order-service:
         condition: service_started
       payment-service:
+        condition: service_started
+      driver-service:
         condition: service_started
     restart: unless-stopped
 
@@ -56,7 +59,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  # Payment Service
+    # Payment Service
   payment-service:
     build:
       context: .
@@ -65,15 +68,26 @@ services:
     ports:
       - "9091:9091"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=payment-service
       - CERTS_DIR=/certs
     volumes:
       - certs:/certs:ro
     networks:
       - grpc-network
     depends_on:
-      cert-generator:
-        condition: service_completed_successfully
+      - cert-generator
+    restart: unless-stopped
+
+  # Driver Service
+  driver-service:
+    build:
+      context: .
+      dockerfile: ./services/driver-service-go/Dockerfile
+    container_name: driver-service
+    ports:
+      - "9092:9092"
+    networks:
+      - grpc-network
     restart: unless-stopped
 
 volumes:
