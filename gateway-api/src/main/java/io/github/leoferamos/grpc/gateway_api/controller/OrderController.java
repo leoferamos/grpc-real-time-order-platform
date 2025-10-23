@@ -19,7 +19,7 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<CreateOrderResponse> createOrder(@RequestBody CreateOrderRequest request) {
-        log.info("Received order request for user: {}", request.getUserId());
+        log.info("Received order request for customer: {}", request.getCustomerId());
         
         try {
             CreateOrderResponse response = orderGatewayService.createOrder(request);
