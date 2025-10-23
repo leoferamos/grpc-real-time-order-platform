@@ -19,4 +19,6 @@ subjectAltName = @alt_names
 DNS.1 = order-service
 DNS.2 = localhost
 DNS.3 = *.order-service
+DNS.4 = payment-service
+DNS.5 = *.payment-service
 IP.1  = 127.0.0.1
