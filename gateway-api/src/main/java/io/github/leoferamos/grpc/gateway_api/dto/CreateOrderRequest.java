@@ -12,11 +12,28 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CreateOrderRequest {
-    private String userId;
+    private String customerId;
     private String restaurantId;
-    private List<String> items;
-    private String pickupLocation;
-    private String destinationLocation;
-    private Double amount;
-    private String paymentMethod;
+    private List<OrderItem> items;
+    private Address deliveryAddress;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class OrderItem {
+        private String name;
+        private Integer quantity;
+        private Double price;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Address {
+        private String street;
+        private String city;
+        private String zipCode;
+        private Double latitude;
+        private Double longitude;
+    }
 }
