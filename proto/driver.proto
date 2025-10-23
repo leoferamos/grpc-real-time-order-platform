@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.github.leoferamos.grpc.driver";
+option java_outer_classname = "DriverProto";
+option go_package = "github.com/leoferamos/grpc-real-time-order-platform/proto/driver";
+
+package driver;
+
+message Driver {
+  string driver_id = 1;
+  string name = 2;
+  string vehicle = 3;
+  string license_plate = 4;
+  Location current_location = 5;
+  bool available = 6;
+}
+
+message Location {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+message AssignDriverRequest {
+  string order_id = 1;
+  Location pickup_location = 2;
+}
+
+message AssignDriverResponse {
+  string driver_id = 1;
+  string driver_name = 2;
+  string vehicle = 3;
+  int32 estimated_time_minutes = 4;
+  string status = 5; // ASSIGNED, NO_DRIVERS_AVAILABLE
+}
+
+message DriverStatusRequest {
+  string driver_id = 1;
+}
+
+message DriverStatusResponse {
+  Driver driver = 1;
+}
+
+service DriverService {
+  rpc AssignDriver(AssignDriverRequest) returns (AssignDriverResponse);
+  rpc GetDriverStatus(DriverStatusRequest) returns (DriverStatusResponse);
+}
