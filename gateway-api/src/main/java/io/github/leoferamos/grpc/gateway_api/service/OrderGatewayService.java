@@ -15,6 +15,7 @@ import io.github.leoferamos.grpc.payment.PaymentServiceGrpc;
 import io.github.leoferamos.grpc.notification.NotificationServiceGrpc;
 import io.github.leoferamos.grpc.notification.OrderUpdate;
 import io.github.leoferamos.grpc.notification.SubscribeRequest;
+import io.github.leoferamos.grpc.notification.NotificationMessage;
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
@@ -231,6 +232,23 @@ public class OrderGatewayService {
         String orderId = orderResp.getOrderId();
         log.info("Order created with ID: {} (status={})", orderId, orderResp.getStatus());
 
+        // Notify that order was created
+        try {
+            if (notificationStub != null) {
+                NotificationMessage createdMsg = NotificationMessage.newBuilder()
+                        .setOrderId(orderId)
+                        .setStatus("CREATED")
+                        .setTitle("Order Created")
+                        .setBody("Order " + orderId + " was created")
+                        .setTimestamp(System.currentTimeMillis())
+                        .build();
+                notificationStub.sendNotification(createdMsg);
+                log.info("Sent CREATED notification for order={}", orderId);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send CREATED notification for {}: {}", orderId, e.getMessage());
+        }
+
         // Call Payment Service
         double totalAmount = request.getItems() == null ? 0.0
             : request.getItems().stream()
@@ -251,9 +269,41 @@ public class OrderGatewayService {
             paymentStatus = paymentResp.getStatus();
             log.info("Payment processed: paymentId={} status={} message='{}'", 
                     paymentResp.getPaymentId(), paymentStatus, paymentResp.getMessage());
+
+            // Notify payment result
+            try {
+                if (notificationStub != null) {
+                    NotificationMessage payMsg = NotificationMessage.newBuilder()
+                            .setOrderId(orderId)
+                            .setStatus(paymentStatus == null ? "UNKNOWN_PAYMENT" : "PAYMENT_" + paymentStatus)
+                            .setTitle("Payment " + paymentStatus)
+                            .setBody("Payment for order " + orderId + " status: " + paymentStatus)
+                            .setTimestamp(System.currentTimeMillis())
+                            .build();
+                    notificationStub.sendNotification(payMsg);
+                    log.info("Sent PAYMENT notification for order={} status={}", orderId, paymentStatus);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to send PAYMENT notification for {}: {}", orderId, e.getMessage());
+            }
+
         } catch (Exception e) {
             log.error("Failed to process payment via gRPC: {}", e.getMessage());
             paymentStatus = "FAILED";
+            try {
+                if (notificationStub != null) {
+                    NotificationMessage payFail = NotificationMessage.newBuilder()
+                            .setOrderId(orderId)
+                            .setStatus("PAYMENT_FAILED")
+                            .setTitle("Payment Failed")
+                            .setBody("Payment processing failed for order " + orderId + ": " + e.getMessage())
+                            .setTimestamp(System.currentTimeMillis())
+                            .build();
+                    notificationStub.sendNotification(payFail);
+                }
+            } catch (Exception ex) {
+                log.warn("Failed to send PAYMENT_FAILED notification for {}: {}", orderId, ex.getMessage());
+            }
         }
 
         // Driver assignment via DriverService
@@ -283,8 +333,37 @@ public class OrderGatewayService {
                         .estimatedTimeMinutes(dResp.getEstimatedTimeMinutes())
                         .build();
                     orderStatus = "ASSIGNED";
+                    // Notify driver assigned
+                    try {
+                        if (notificationStub != null) {
+                            NotificationMessage drvMsg = NotificationMessage.newBuilder()
+                                    .setOrderId(orderId)
+                                    .setStatus("DRIVER_ASSIGNED")
+                                    .setTitle("Driver Assigned")
+                                    .setBody("Driver " + dResp.getDriverName() + " assigned to order " + orderId)
+                                    .setTimestamp(System.currentTimeMillis())
+                                    .build();
+                            notificationStub.sendNotification(drvMsg);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to send DRIVER_ASSIGNED notification for {}: {}", orderId, e.getMessage());
+                    }
                 } else {
                     orderStatus = "PENDING_DRIVER";
+                    try {
+                        if (notificationStub != null) {
+                            NotificationMessage pendingMsg = NotificationMessage.newBuilder()
+                                    .setOrderId(orderId)
+                                    .setStatus("PENDING_DRIVER")
+                                    .setTitle("Driver Pending")
+                                    .setBody("No driver assigned yet for order " + orderId)
+                                    .setTimestamp(System.currentTimeMillis())
+                                    .build();
+                            notificationStub.sendNotification(pendingMsg);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to send PENDING_DRIVER notification for {}: {}", orderId, e.getMessage());
+                    }
                 }
             } catch (Exception e) {
                 log.warn("Driver assignment failed: {}", e.getMessage());
@@ -341,6 +420,29 @@ public class OrderGatewayService {
                     .status(null)
                     .message("Error retrieving status: " + e.getMessage())
                     .build();
+        }
+    }
+
+    /**
+     * Send an ad-hoc notification via NotificationService. Used by demo/test endpoints.
+     */
+    public void sendNotification(String orderId, String status, String title, String body) {
+        if (notificationStub == null) {
+            log.warn("NotificationService client not initialized; cannot send notification for {}", orderId);
+            return;
+        }
+        try {
+            NotificationMessage msg = NotificationMessage.newBuilder()
+                    .setOrderId(orderId == null ? "" : orderId)
+                    .setStatus(status == null ? "" : status)
+                    .setTitle(title == null ? "" : title)
+                    .setBody(body == null ? "" : body)
+                    .setTimestamp(System.currentTimeMillis())
+                    .build();
+            notificationStub.sendNotification(msg);
+            log.info("Sent manual notification for order={} status={}", orderId, status);
+        } catch (Exception e) {
+            log.warn("Failed to send manual notification for {}: {}", orderId, e.getMessage());
         }
     }
 }
