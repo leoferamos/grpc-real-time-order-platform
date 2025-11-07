@@ -307,10 +307,14 @@ public class OrderGatewayService {
      * Retrieve a latest order update from NotificationService by subscribing and reading
      * the first available update. Uses a short deadline to avoid blocking.
      */
-    public String getOrderStatus(String orderId) {
+    public io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse getOrderStatus(String orderId) {
         if (notificationStub == null) {
             log.warn("NotificationService client not initialized; cannot fetch status for {}", orderId);
-            return "Notification service unavailable";
+            return io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse.builder()
+                    .orderId(orderId)
+                    .status(null)
+                    .message("Notification service unavailable")
+                    .build();
         }
 
         try {
@@ -318,13 +322,25 @@ public class OrderGatewayService {
             Iterator<OrderUpdate> it = notificationStub.withDeadlineAfter(2, TimeUnit.SECONDS).streamOrderUpdates(req);
             if (it.hasNext()) {
                 OrderUpdate u = it.next();
-                return String.format("orderId=%s status=%s message=%s", u.getOrderId(), u.getStatus(), u.getMessage());
+                return io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse.builder()
+                        .orderId(u.getOrderId())
+                        .status(u.getStatus())
+                        .message(u.getMessage())
+                        .build();
             } else {
-                return "No updates available for order " + orderId;
+                return io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse.builder()
+                        .orderId(orderId)
+                        .status(null)
+                        .message("No updates available")
+                        .build();
             }
         } catch (Exception e) {
             log.warn("Failed to fetch order status for {}: {}", orderId, e.getMessage());
-            return "Error retrieving status: " + e.getMessage();
+            return io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse.builder()
+                    .orderId(orderId)
+                    .status(null)
+                    .message("Error retrieving status: " + e.getMessage())
+                    .build();
         }
     }
 }

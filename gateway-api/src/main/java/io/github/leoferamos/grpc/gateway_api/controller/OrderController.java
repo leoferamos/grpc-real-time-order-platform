@@ -36,14 +36,18 @@ public class OrderController {
     }
 
     @GetMapping("/{orderId}")
-    public ResponseEntity<String> getOrderStatus(@PathVariable String orderId) {
+    public ResponseEntity<io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse> getOrderStatus(@PathVariable String orderId) {
         log.info("Getting status for order: {}", orderId);
         try {
-            String status = orderGatewayService.getOrderStatus(orderId);
+            io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse status = orderGatewayService.getOrderStatus(orderId);
             return ResponseEntity.ok(status);
         } catch (Exception e) {
             log.error("Error fetching order status: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to retrieve order status: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(io.github.leoferamos.grpc.gateway_api.dto.OrderStatusResponse.builder()
+                    .orderId(orderId)
+                    .status(null)
+                    .message("Failed to retrieve order status: " + e.getMessage())
+                    .build());
         }
     }
 
