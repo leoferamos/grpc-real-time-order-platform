@@ -38,8 +38,13 @@ public class OrderController {
     @GetMapping("/{orderId}")
     public ResponseEntity<String> getOrderStatus(@PathVariable String orderId) {
         log.info("Getting status for order: {}", orderId);
-        // TODO: Implement order status retrieval via gRPC
-        return ResponseEntity.ok("Order status retrieval not yet implemented");
+        try {
+            String status = orderGatewayService.getOrderStatus(orderId);
+            return ResponseEntity.ok(status);
+        } catch (Exception e) {
+            log.error("Error fetching order status: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to retrieve order status: " + e.getMessage());
+        }
     }
 
     @GetMapping("/health")

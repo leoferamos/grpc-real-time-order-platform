@@ -12,10 +12,15 @@ import io.github.leoferamos.grpc.driver.Location;
 import io.github.leoferamos.grpc.payment.PaymentRequest;
 import io.github.leoferamos.grpc.payment.PaymentResponse;
 import io.github.leoferamos.grpc.payment.PaymentServiceGrpc;
+import io.github.leoferamos.grpc.notification.NotificationServiceGrpc;
+import io.github.leoferamos.grpc.notification.OrderUpdate;
+import io.github.leoferamos.grpc.notification.SubscribeRequest;
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import java.io.File;
+import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +40,9 @@ public class OrderGatewayService {
     @Value("${grpc.client.driver-service.address:static://localhost:9092}")
     private String driverServiceAddress;
 
+    @Value("${grpc.client.notification-service.address:static://localhost:9093}")
+    private String notificationServiceAddress;
+
     private ManagedChannel orderChannel;
     private OrderServiceGrpc.OrderServiceBlockingStub orderStub;
 
@@ -43,6 +51,9 @@ public class OrderGatewayService {
 
     private ManagedChannel driverChannel;
     private DriverServiceGrpc.DriverServiceBlockingStub driverStub;
+
+    private ManagedChannel notificationChannel;
+    private NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
 
     @PostConstruct
     public void init() {
@@ -126,6 +137,29 @@ public class OrderGatewayService {
                 log.info("gRPC client initialized with mTLS to DriverService");
             }
 
+                // Initialize Notification Service client with mTLS
+                String notificationTarget;
+                if (notificationServiceAddress == null || notificationServiceAddress.isBlank()) {
+                    log.warn("gRPC notification service address is not set; notification queries disabled");
+                } else {
+                    if (notificationServiceAddress.startsWith("static://")) {
+                        notificationTarget = notificationServiceAddress.substring("static://".length());
+                    } else {
+                        notificationTarget = notificationServiceAddress;
+                    }
+                    log.info("Connecting to NotificationService at {} with TLS", notificationTarget);
+
+                    this.notificationChannel = NettyChannelBuilder.forTarget(notificationTarget)
+                        .overrideAuthority("notification-service")
+                        .sslContext(GrpcSslContexts.forClient()
+                            .trustManager(trustCertCollection)
+                            .keyManager(clientCertChain, clientPrivateKey)
+                            .build())
+                        .build();
+                    this.notificationStub = NotificationServiceGrpc.newBlockingStub(notificationChannel);
+                    log.info("gRPC client initialized with mTLS to NotificationService");
+                }
+
         } catch (Exception e) {
             log.error("Failed to initialize gRPC client: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to initialize gRPC client", e);
@@ -148,6 +182,22 @@ public class OrderGatewayService {
                 log.info("gRPC channel to PaymentService shut down.");
             } catch (Exception e) {
                 log.warn("Error shutting down PaymentService gRPC channel: {}", e.getMessage());
+            }
+        }
+        if (driverChannel != null) {
+            try {
+                driverChannel.shutdownNow();
+                log.info("gRPC channel to DriverService shut down.");
+            } catch (Exception e) {
+                log.warn("Error shutting down DriverService gRPC channel: {}", e.getMessage());
+            }
+        }
+        if (notificationChannel != null) {
+            try {
+                notificationChannel.shutdownNow();
+                log.info("gRPC channel to NotificationService shut down.");
+            } catch (Exception e) {
+                log.warn("Error shutting down NotificationService gRPC channel: {}", e.getMessage());
             }
         }
     }
@@ -251,5 +301,30 @@ public class OrderGatewayService {
             .driver(driverInfo)
             .message(orderStatus.equals("ASSIGNED") ? "Order created and driver assigned successfully!" : "Order created; driver pending")
             .build();
+    }
+
+    /**
+     * Retrieve a latest order update from NotificationService by subscribing and reading
+     * the first available update. Uses a short deadline to avoid blocking.
+     */
+    public String getOrderStatus(String orderId) {
+        if (notificationStub == null) {
+            log.warn("NotificationService client not initialized; cannot fetch status for {}", orderId);
+            return "Notification service unavailable";
+        }
+
+        try {
+            SubscribeRequest req = SubscribeRequest.newBuilder().setOrderId(orderId).build();
+            Iterator<OrderUpdate> it = notificationStub.withDeadlineAfter(2, TimeUnit.SECONDS).streamOrderUpdates(req);
+            if (it.hasNext()) {
+                OrderUpdate u = it.next();
+                return String.format("orderId=%s status=%s message=%s", u.getOrderId(), u.getStatus(), u.getMessage());
+            } else {
+                return "No updates available for order " + orderId;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch order status for {}: {}", orderId, e.getMessage());
+            return "Error retrieving status: " + e.getMessage();
+        }
     }
 }
